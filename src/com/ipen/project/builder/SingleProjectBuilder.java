@@ -21,10 +21,13 @@ import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import javax.imageio.ImageIO;
 import javax.swing.BorderFactory;
@@ -96,6 +99,7 @@ public class SingleProjectBuilder extends JFrame implements ActionListener {
 	String directoryDir;
 	String selectedDir = "";
 	String projectName = "";
+	String databaseSelected = "MongoDB";
 
 	private SingleProjectBuilder() {
 		
@@ -149,7 +153,6 @@ public class SingleProjectBuilder extends JFrame implements ActionListener {
 
 		cbDatabaseNames = new JComboBox<String>();
 		cbDatabaseNames.addItem("MongoDB");
-		cbDatabaseNames.addItem("Oracle");
 		cbDatabaseNames.addItem("Mysql");
 		cbDatabaseNames.addItem("Postgresql");
 		getContentPane().add(cbDatabaseNames);
@@ -157,6 +160,7 @@ public class SingleProjectBuilder extends JFrame implements ActionListener {
 		cbDatabaseNames.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
 				String a = (String) cbDatabaseNames.getItemAt(cbDatabaseNames.getSelectedIndex());
+				databaseSelected = a;
 				addDatabaseDependency(a);
 			}
 		});
@@ -285,47 +289,41 @@ public class SingleProjectBuilder extends JFrame implements ActionListener {
 				System.exit(0);
 			}
 		});
-
-		buildBtn.addActionListener(new ActionListener() {
-			public void actionPerformed(ActionEvent e) {
-				try {
-					buildProject();
-				} catch (IOException e1) {
-					// TODO Auto-generated catch block
-					e1.printStackTrace();
-				}
-			}
-		});
+	
 	}
 
 	public void addToDocker() {
 		try {
-			String containerName = getRandomtString();
-			modifyFile(selectedDir + "\\src\\main\\resources\\application.properties",
-					"spring.data.mongodb.host=localhost",
-					"spring.data.mongodb.host=" + txtProjectName.getText().toLowerCase() + containerName);
-			String uri = "spring.data.mongodb.uri: mongodb://" + txtProjectName.getText().toLowerCase() + containerName
-					+ ":27017/api-database";
-			modifyFile(selectedDir + "\\src\\main\\resources\\application.properties",
-					"spring.data.mongodb.uri: mongodb://127.0.0.1:27017/api-database", uri);
-			modifyFile(selectedDir + "\\docker-compose.yml", "api-docker-image",
-					txtProjectName.getText().toLowerCase());
-			modifyFile(selectedDir + "\\docker-compose.yml", "api-database-container",
-					txtProjectName.getText().toLowerCase() + containerName);
-
-			// String cmd1 = "cd " + selectedDir + " && mode con:cols=80 lines=40 && mvn
-			// clean install && docker build -f Dockerfile -t "+ projectName +" .";
-			String cmd1 = "cd " + selectedDir + " && mvn clean install && docker build -f Dockerfile -t " + projectName
-					+ " .";
+			
+			if(databaseSelected.equals("MongoDB")) {
+		
+			modify(selectedDir + "\\src\\main\\resources\\application.properties","127.0.0.1", "mongo-docker-container");
+			modify(selectedDir + "\\src\\main\\resources\\application.properties","localhost", "mongo-docker-container");
+			modify(selectedDir + "\\docker-compose.yml", "spring-boot-mongo-docker",txtProjectName.getText().toLowerCase()+"mongo-docker");
+			}
+			
+			else if(databaseSelected.equals("Mysql")) {
+			modify(selectedDir + "\\src\\main\\resources\\application.properties","127.0.0.1", "mysql-docker-container");
+			modify(selectedDir + "\\src\\main\\resources\\application.properties","localhost", "mysql-docker-container");
+			modify(selectedDir + "\\docker-compose.yml", "spring-boot-mysql-image",txtProjectName.getText().toLowerCase()+"mysql-docker");
+			}
+			
+			else if(databaseSelected.equals("Postgresql")) {
+			modify(selectedDir + "\\src\\main\\resources\\application.properties","127.0.0.1", "postgresql-docker-container");
+			modify(selectedDir + "\\src\\main\\resources\\application.properties","localhost", "postgresql-docker-container");
+			modify(selectedDir + "\\docker-compose.yml", "spring-boot-postgres-image",txtProjectName.getText().toLowerCase()+"postgresql-docker");
+			}
+			
+			String cmd1 = "cd " + selectedDir + " && mode con:cols=80 lines=40 && mvn clean install && docker build -f Dockerfile -t "+ txtProjectName.getText().toLowerCase()+"mongo-docker" +" .";
+			
 			String command = "cmd /c start cmd.exe /K \" " + cmd1 + "\" ";
 			Runtime rt = Runtime.getRuntime();
 			Process proc = rt.exec(command);
-
+			deployLocal.setVisible(true);
 		} catch (Exception e) {
 			System.out.println("HEY Buddy ! U r Doing Something Wrong ");
 			e.printStackTrace();
 		}
-		deployLocal.setVisible(true);
 	}
 
 	protected String getRandomtString() {
@@ -499,30 +497,49 @@ public class SingleProjectBuilder extends JFrame implements ActionListener {
 			List<Dependency> existingDependencyList = model.getDependencies();
 			dependencyList.addAll(existingDependencyList);
 
+			if (dbName.equals("Postgresql") || dbName.equals("Mysql")) {
+				Dependency datajpadep = new Dependency();
+				datajpadep.setGroupId("org.springframework.boot");
+				datajpadep.setArtifactId("spring-boot-starter-data-jpa");
+				dependencyList.add(datajpadep);
+			}
+
 			if (dbName.equals("MongoDB")) {
 				Dependency dep = new Dependency();
 				dep.setGroupId("org.springframework.boot");
 				dep.setArtifactId("spring-boot-starter-data-mongodb");
 				dependencyList.add(dep);
-			} else if (dbName.equals("Oracle")) {
-				Dependency dep = new Dependency();
-				dep.setGroupId("com.oracle");
-				dep.setArtifactId("ojdbc14");
-				dependencyList.add(dep);
-			}
-
-			else if (dbName.equals("Postgresql")) {
+			} else if (dbName.equals("Postgresql")) {
 				Dependency dep = new Dependency();
 				dep.setGroupId("org.postgresql");
 				dep.setArtifactId("postgresql");
+				dep.setVersion("42.0.0");
 				dependencyList.add(dep);
-			}
 
-			else if (dbName.equals("Mysql")) {
+				String sourceDockerCompose = "resources//postgresql//docker-compose.yml";
+				File sourceDockerComposeFile = new File(sourceDockerCompose);
+				String dockercomposename = sourceDockerComposeFile.getName();
+
+				String targetDockerCompose = selectedDir + "\\" + dockercomposename;
+				File targetDockerComposeFile = new File(targetDockerCompose);
+
+				FileUtils.copyFile(sourceDockerComposeFile, targetDockerComposeFile);
+
+			} else if (dbName.equals("Mysql")) {
 				Dependency dep = new Dependency();
 				dep.setGroupId("mysql");
 				dep.setArtifactId("mysql-connector-java");
+				dep.setVersion("8.0.13");
 				dependencyList.add(dep);
+
+				String sourceDockerCompose = "resources//mysql//docker-compose.yml";
+				File sourceDockerComposeFile = new File(sourceDockerCompose);
+				String dockercomposename = sourceDockerComposeFile.getName();
+
+				String targetDockerCompose = selectedDir + "\\" + dockercomposename;
+				File targetDockerComposeFile = new File(targetDockerCompose);
+
+				FileUtils.copyFile(sourceDockerComposeFile, targetDockerComposeFile);
 			}
 
 			model.setDependencies(dependencyList);
@@ -678,6 +695,14 @@ public class SingleProjectBuilder extends JFrame implements ActionListener {
 			if (!sourceFile.renameTo(destFile))
 				throw new RuntimeException();
 		}
+	}
+	
+	static void modify(String filePath, String oldString, String newString) throws IOException {
+		Path path = Paths.get(filePath);
+        Stream <String> lines = Files.lines(path);
+        List <String> replaced = lines.map(line -> line.replaceAll(oldString, newString)).collect(Collectors.toList());
+        Files.write(path, replaced);
+        lines.close();
 	}
 
 	static void modifyFile(String filePath, String oldString, String newString) {

@@ -1,0 +1,22 @@
+version: '3'
+
+services:
+  postgresql-docker-container:
+    image: postgres
+    environment:
+     - POSTGRES_PASSWORD=password
+     - POSTGRES_USER=postgres
+     - POSTGRES_DB=mydb
+
+  spring-boot-postgres-app:
+    image: spring-boot-postgres-image
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    depends_on:
+      - postgresql-docker-container
+    ports:
+      - 8087:8085
+   
+
+
